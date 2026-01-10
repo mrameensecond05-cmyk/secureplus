@@ -1,0 +1,5 @@
+{
+  "description": "SecurePulse: A production-style SIEM monitoring portal and target application that produces structured JSON logs for Wazuh ingestion and analysis.",
+  "requestFramePermissions": [],
+  "name": "SecurePulse Wazuh Monitor"
+}
