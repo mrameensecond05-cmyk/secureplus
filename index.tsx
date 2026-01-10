@@ -1,631 +1,633 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { 
   Shield, 
   Users, 
-  Package, 
   Cpu, 
   FileText, 
   Terminal, 
   LayoutDashboard, 
-  Upload, 
-  LogIn, 
-  UserPlus, 
-  AlertCircle, 
   Settings, 
   Search,
   CheckCircle2,
-  XCircle,
-  HardDrive,
   Code,
-  Globe,
   Lock,
   BarChart3,
   Activity,
   AlertTriangle,
   ArrowRight,
   Database,
-  Eye,
   ArrowUpRight,
   Clock,
   Server,
   Zap,
-  Filter
+  Filter,
+  ClipboardList,
+  User,
+  History,
+  MessageSquare,
+  Bug
 } from 'lucide-react';
 import { 
-  LineChart, 
-  Line, 
+  AreaChart, 
+  Area, 
   XAxis, 
   YAxis, 
   CartesianGrid, 
   Tooltip, 
   ResponsiveContainer, 
-  AreaChart, 
-  Area,
-  PieChart,
-  Pie,
-  Cell
+  PieChart, 
+  Pie, 
+  Cell 
 } from 'recharts';
 
 /**
- * --- TYPES & MOCK DATA ---
+ * --- TYPES BASED ON PDF DATABASE DESIGN ---
  */
 
-type UserRole = 'ADMIN' | 'AGENT' | null;
-type ViewState = 'DASHBOARD' | 'RESOURCES' | 'ANALYTICS';
+type UserType = 'Admin' | 'User';
 
-interface LogEntry {
-  ts: string;
-  time: string; 
-  event: string;
+interface SecurePulseLogin {
+  id: number;
   email: string;
-  ip: string;
-  severity: 'INFO' | 'WARNING' | 'CRITICAL';
-  details: string;
-  count: number;
+  userType: UserType;
+  is_active: boolean;
+  last_login: string;
 }
 
-interface Asset {
-  id: string;
+interface SecurePulseUserProfile {
+  id: number;
   name: string;
-  ip: string;
-  os: string;
+  email: string;
+  phone: string;
+  place: string;
+  login_id: number;
+}
+
+interface SecurePulseAsset {
+  id: number;
+  asset_name: string;
+  hostname: string;
+  ip_address: string;
+  asset_type: string;
+  environment: 'lab' | 'prod';
+  criticality: 'high' | 'medium' | 'low';
+  created_at: string;
+}
+
+interface SecurePulseAgent {
+  id: number;
+  asset_id: number;
+  wazuh_agent_id: string;
+  wazuh_agent_name: string;
+  status: 'active' | 'disconnected';
   version: string;
-  status: 'ONLINE' | 'OFFLINE';
-  lastKeepAlive: string;
+  last_seen: string;
 }
 
-interface Vulnerability {
-  id: string;
-  asset: string;
-  cve: string;
-  severity: 'High' | 'Medium' | 'Low';
-  pkg: string;
-  status: 'OPEN' | 'FIXED';
+interface SecurePulseAlertReference {
+  id: number;
+  asset_id: number;
+  agent_id: number;
+  rule_id: number;
+  severity: number;
+  title: string;
+  description: string;
+  occurred_at: string;
+  status: 'active' | 'acknowledged';
+  wazuh_index: string;
 }
 
-const SEVERITY_COLORS = {
-  INFO: '#10b981',
-  WARNING: '#f59e0b',
-  CRITICAL: '#ef4444'
-};
+interface SecurePulseAcknowledgement {
+  id: number;
+  alert_ref_id: number;
+  user_id: number;
+  ack_status: 'acknowledged' | 'ignored' | 'false_positive';
+  note: string;
+  created_at: string;
+}
 
-const MOCK_ASSETS: Asset[] = [
-  { id: '001', name: 'Web-Server-PROD', ip: '10.0.0.15', os: 'Ubuntu 22.04 LTS', version: '4.7.2', status: 'ONLINE', lastKeepAlive: '2 mins ago' },
-  { id: '002', name: 'DB-Node-01', ip: '10.0.0.22', os: 'Debian 11', version: '4.7.2', status: 'ONLINE', lastKeepAlive: '5 mins ago' },
-  { id: '003', name: 'Dev-Sandbox', ip: '192.168.1.102', os: 'CentOS 7', version: '4.4.1', status: 'OFFLINE', lastKeepAlive: '2 days ago' },
+interface SecurePulseIncident {
+  id: number;
+  title: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+  status: 'open' | 'in_progress' | 'closed';
+  created_by: number;
+  assigned_to: number | null;
+  created_at: string;
+}
+
+interface LoginAudit {
+  audit_id: number;
+  user_id: number | null;
+  email_input: string;
+  ip_address: string;
+  user_agent: string;
+  success: number;
+  fail_reason: string | null;
+  created_at: string;
+}
+
+/**
+ * --- MOCK DATA (SYCHRONIZED WITH PDF NORMALIZED TABLES) ---
+ */
+
+const MOCK_LOGINS: SecurePulseLogin[] = [
+  { id: 1, email: 'admin@securepulse.local', userType: 'Admin', is_active: true, last_login: '2025-12-29 10:00:00' },
+  { id: 2, email: 'rahul@securepulse.local', userType: 'User', is_active: true, last_login: '2025-12-29 10:10:00' },
 ];
 
-const MOCK_VULNS: Vulnerability[] = [
-  { id: 'v-01', asset: 'Web-Server-PROD', cve: 'CVE-2024-1234', severity: 'High', pkg: 'openssl', status: 'OPEN' },
-  { id: 'v-02', asset: 'DB-Node-01', cve: 'CVE-2023-9981', severity: 'Medium', pkg: 'libmysqlclient', status: 'OPEN' },
-  { id: 'v-03', asset: 'Web-Server-PROD', cve: 'CVE-2024-0021', severity: 'Low', pkg: 'python3-pip', status: 'FIXED' },
+const MOCK_PROFILES: SecurePulseUserProfile[] = [
+  { id: 1, name: 'Ananya Nair', email: 'admin@securepulse.local', phone: '9876543210', place: 'Kochi', login_id: 1 },
+  { id: 2, name: 'Rahul K', email: 'rahul@securepulse.local', phone: '9123456780', place: 'Trivandrum', login_id: 2 },
 ];
 
-const generateGraphData = () => {
-  return Array.from({ length: 12 }, (_, i) => ({
-    time: `${i * 2}:00`,
-    events: Math.floor(Math.random() * 50) + 10,
-    critical: Math.floor(Math.random() * 10),
-  }));
-};
+const MOCK_ASSETS: SecurePulseAsset[] = [
+  { id: 201, asset_name: 'WebApp-Server', hostname: 'web01', ip_address: '192.168.1.20', asset_type: 'web-server', environment: 'lab', criticality: 'high', created_at: '2025-12-29 09:45:00' },
+  { id: 202, asset_name: 'DB-Server', hostname: 'db01', ip_address: '192.168.1.30', asset_type: 'database', environment: 'lab', criticality: 'medium', created_at: '2025-12-29 09:50:00' },
+];
 
-const PIE_DATA = [
-  { name: 'Info', value: 400, color: '#10b981' },
-  { name: 'Warning', value: 300, color: '#f59e0b' },
-  { name: 'Critical', value: 100, color: '#ef4444' },
+const MOCK_AGENTS: SecurePulseAgent[] = [
+  { id: 301, asset_id: 201, wazuh_agent_id: '001', wazuh_agent_name: 'web01-agent', status: 'active', version: '4.x', last_seen: '2025-12-29 10:16:00' },
+  { id: 302, asset_id: 202, wazuh_agent_id: '002', wazuh_agent_name: 'db01-agent', status: 'active', version: '4.x', last_seen: '2025-12-29 10:15:40' },
+];
+
+const MOCK_ALERTS: SecurePulseAlertReference[] = [
+  { id: 5001, asset_id: 201, agent_id: 301, rule_id: 5710, severity: 10, title: 'Multiple failed logins', description: 'Possible brute force detected', occurred_at: '2025-12-29 10:14:30', status: 'acknowledged', wazuh_index: 'wazuh-alerts-2025.12.29' },
+  { id: 5002, asset_id: 201, agent_id: 301, rule_id: 5503, severity: 7, title: 'File changed in uploads', description: 'FIM triggered on sensitive directory', occurred_at: '2025-12-29 10:18:05', status: 'active', wazuh_index: 'wazuh-alerts-2025.12.29' },
+  { id: 5003, asset_id: 202, agent_id: 302, rule_id: 6010, severity: 12, title: 'Suspicious DB access', description: 'Unauthorized query pattern detected', occurred_at: '2025-12-29 10:20:00', status: 'active', wazuh_index: 'wazuh-alerts-2025.12.29' },
+];
+
+const MOCK_LOGIN_AUDITS: LoginAudit[] = [
+  { audit_id: 1001, user_id: 1, email_input: 'admin@securepulse.local', ip_address: '192.168.1.10', user_agent: 'Chrome', success: 1, fail_reason: null, created_at: '2025-12-29 10:12:00' },
+  { audit_id: 1002, user_id: null, email_input: 'wrong@securepulse.local', ip_address: '192.168.1.50', user_agent: 'Firefox', success: 0, fail_reason: 'invalid_user', created_at: '2025-12-29 10:13:30' },
+  { audit_id: 1003, user_id: 2, email_input: 'rahul@securepulse.local', ip_address: '192.168.1.20', user_agent: 'Chrome', success: 0, fail_reason: 'wrong_password', created_at: '2025-12-29 10:14:10' },
+  { audit_id: 1004, user_id: 2, email_input: 'rahul@securepulse.local', ip_address: '192.168.1.20', user_agent: 'Chrome', success: 1, fail_reason: null, created_at: '2025-12-29 10:15:05' },
+];
+
+const MOCK_INCIDENTS: SecurePulseIncident[] = [
+  { id: 7001, title: 'Brute force attempt on web01', description: 'Multiple failed logins detected on web app', priority: 'high', status: 'in_progress', created_by: 1, assigned_to: 1, created_at: '2025-12-29 10:16:30' },
+  { id: 7002, title: 'Upload directory integrity issue', description: 'FIM detected file modification in uploads', priority: 'medium', status: 'open', created_by: 1, assigned_to: null, created_at: '2025-12-29 10:19:00' },
 ];
 
 /**
- * --- LOGIN COMPONENT ---
+ * --- MAIN APPLICATION ---
  */
 
-const LoginScreen = ({ onLogin }: { onLogin: (role: UserRole, email: string) => void }) => {
-  const [selectedRole, setSelectedRole] = useState<UserRole>(null);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+const App = () => {
+  const [currentUser, setCurrentUser] = useState<SecurePulseLogin | null>(null);
+  const [currentProfile, setCurrentProfile] = useState<SecurePulseUserProfile | null>(null);
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [logs, setLogs] = useState<any[]>([]);
+  const [showAckModal, setShowAckModal] = useState<number | null>(null);
+  const [ackNote, setAckNote] = useState('');
 
-  const handleRoleSelection = (role: UserRole) => {
-    setSelectedRole(role);
-    if (role === 'ADMIN') setEmail('admin@securepulse.io');
-    if (role === 'AGENT') setEmail('agent-01@securepulse.io');
-    setPassword('password123');
+  // Auto-generate some live telemetry
+  useEffect(() => {
+    if (!currentUser) return;
+    const interval = setInterval(() => {
+      const randomAlert = MOCK_ALERTS[Math.floor(Math.random() * MOCK_ALERTS.length)];
+      setLogs(prev => [{
+        ts: new Date().toLocaleTimeString(),
+        event: randomAlert.title.toUpperCase().replace(/\s/g, '_'),
+        severity: randomAlert.severity >= 10 ? 'CRITICAL' : 'WARNING',
+        details: `${randomAlert.description} on ${randomAlert.wazuh_index}`
+      }, ...prev].slice(0, 50));
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
+  const handleLogin = (email: string) => {
+    const user = MOCK_LOGINS.find(u => u.email === email);
+    if (user) {
+      setCurrentUser(user);
+      setCurrentProfile(MOCK_PROFILES.find(p => p.login_id === user.id) || null);
+    }
   };
 
-  const submitLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (email) onLogin(selectedRole, email);
-  };
-
-  if (!selectedRole) {
+  if (!currentUser) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#050508]">
-        <div className="mb-12 text-center">
-          <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-2xl shadow-indigo-500/20">
-            <Shield size={40} className="text-white" />
+      <div className="min-h-screen flex items-center justify-center bg-[#050508] p-6">
+        <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-12">
+          <div className="flex flex-col justify-center">
+            <div className="w-20 h-20 bg-indigo-600 rounded-3xl flex items-center justify-center mb-8 shadow-2xl shadow-indigo-500/20">
+              <Shield size={48} className="text-white" />
+            </div>
+            <h1 className="text-6xl font-extrabold text-white tracking-tighter mb-4 leading-none">SECURE<span className="text-indigo-500">PULSE</span></h1>
+            <p className="text-slate-400 text-xl font-medium max-w-sm">Normalized SIEM Monitoring & Asset Integrity Verification.</p>
+            <div className="mt-12 flex items-center gap-6">
+               <div className="flex -space-x-3">
+                 {[1,2,3].map(i => <div key={i} className="w-10 h-10 rounded-full border-4 border-[#050508] bg-slate-800" />)}
+               </div>
+               <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Active SOC Nodes: 3/3 Online</p>
+            </div>
           </div>
-          <h1 className="text-4xl font-extrabold text-white tracking-tighter">SECURE<span className="text-indigo-400">PULSE</span></h1>
-          <p className="text-slate-500 font-mono text-sm mt-2">CHOOSE YOUR GATEWAY</p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-3xl">
-          <button 
-            onClick={() => handleRoleSelection('ADMIN')}
-            className="group p-8 rounded-3xl bg-[#0d0d14] border border-white/5 hover:border-indigo-500/50 transition-all text-left relative overflow-hidden"
-          >
-            <div className="absolute -right-4 -top-4 opacity-10 group-hover:opacity-20 transition-opacity">
-              <Lock size={120} />
+          <div className="bg-[#0d0d14] p-12 rounded-[2.5rem] border border-white/5 shadow-2xl">
+            <h2 className="text-2xl font-bold text-white mb-8">Role-Based Entry</h2>
+            <div className="space-y-4">
+              <button onClick={() => handleLogin('admin@securepulse.local')} className="group w-full p-6 rounded-2xl bg-indigo-600/10 border border-indigo-500/20 hover:border-indigo-500/50 transition-all text-left flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-white group-hover:text-indigo-400">SOC Admin</h3>
+                  <p className="text-xs text-slate-500">Access Global Audit & Incidents</p>
+                </div>
+                <Lock size={24} className="text-indigo-500" />
+              </button>
+              <button onClick={() => handleLogin('rahul@securepulse.local')} className="group w-full p-6 rounded-2xl bg-emerald-600/10 border border-emerald-500/20 hover:border-emerald-500/50 transition-all text-left flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-white group-hover:text-emerald-400">Security User</h3>
+                  <p className="text-xs text-slate-500">Asset Alerts & Feedbacks</p>
+                </div>
+                <Users size={24} className="text-emerald-500" />
+              </button>
             </div>
-            <div className="w-12 h-12 bg-indigo-500/10 rounded-xl flex items-center justify-center mb-6">
-              <Settings className="text-indigo-400" />
-            </div>
-            <h3 className="text-xl font-bold text-white mb-2">SOC Administrator</h3>
-            <p className="text-slate-500 text-sm leading-relaxed mb-6">Access global SIEM analytics, manage assets, and oversee security incidents.</p>
-            <div className="flex items-center gap-2 text-indigo-400 font-bold text-xs">
-              ENTER COMMAND CENTER <ArrowRight size={14} />
-            </div>
-          </button>
-
-          <button 
-            onClick={() => handleRoleSelection('AGENT')}
-            className="group p-8 rounded-3xl bg-[#0d0d14] border border-white/5 hover:border-emerald-500/50 transition-all text-left relative overflow-hidden"
-          >
-            <div className="absolute -right-4 -top-4 opacity-10 group-hover:opacity-20 transition-opacity">
-              <Cpu size={120} />
-            </div>
-            <div className="w-12 h-12 bg-emerald-500/10 rounded-xl flex items-center justify-center mb-6">
-              <Users className="text-emerald-400" />
-            </div>
-            <h3 className="text-xl font-bold text-white mb-2">Asset Agent</h3>
-            <p className="text-slate-500 text-sm leading-relaxed mb-6">Monitor local endpoint health, view personal logs, and manage file integrity.</p>
-            <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
-              ENTER WORKSTATION <ArrowRight size={14} />
-            </div>
-          </button>
+          </div>
         </div>
       </div>
     );
   }
 
+  const isAdmin = currentUser.userType === 'Admin';
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#050508] p-6">
-      <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
-        <button onClick={() => setSelectedRole(null)} className="mb-8 text-slate-500 hover:text-white flex items-center gap-2 text-xs font-bold transition-colors">
-           ← BACK TO SELECTION
-        </button>
-        
-        <div className="bg-[#0d0d14] p-8 rounded-3xl border border-white/5 shadow-2xl">
-          <div className="flex items-center gap-3 mb-8">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${selectedRole === 'ADMIN' ? 'bg-indigo-600' : 'bg-emerald-600'}`}>
-              {selectedRole === 'ADMIN' ? <Lock size={20} className="text-white" /> : <Cpu size={20} className="text-white" />}
+    <div className="flex h-screen bg-[#050508] text-slate-300 overflow-hidden font-sans">
+      {/* SIDEBAR - DFD LEVEL 1 LOGIC */}
+      <aside className="w-72 border-r border-white/5 bg-[#0d0d14] flex flex-col p-6">
+        <div className="flex items-center gap-3 mb-12">
+          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isAdmin ? 'bg-indigo-600' : 'bg-emerald-600'} shadow-xl`}>
+            <Shield size={24} className="text-white" />
+          </div>
+          <div>
+            <h1 className="text-xl font-extrabold text-white tracking-tight leading-none">SECURE<span className="text-indigo-400">PULSE</span></h1>
+            <p className="text-[10px] text-slate-600 font-mono font-bold uppercase mt-1 tracking-widest">Wazuh Integrated</p>
+          </div>
+        </div>
+
+        <nav className="flex-1 space-y-1">
+          <NavItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
+          <NavItem icon={Server} label={isAdmin ? "Asset Mapping" : "My Assets"} active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} />
+          <NavItem icon={ClipboardList} label="Incidents" active={activeTab === 'incidents'} onClick={() => setActiveTab('incidents')} />
+          {isAdmin && <NavItem icon={History} label="Login Audits" active={activeTab === 'audits'} onClick={() => setActiveTab('audits')} />}
+          <NavItem icon={FileText} label="Audit Reports" active={activeTab === 'reports'} onClick={() => setActiveTab('reports')} />
+          <NavItem icon={Bug} label="Vulnerabilities" active={activeTab === 'vulns'} onClick={() => setActiveTab('vulns')} />
+        </nav>
+
+        <div className="mt-auto pt-6 border-t border-white/5">
+          <div className="flex items-center gap-3 mb-6 bg-white/5 p-4 rounded-2xl">
+            <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center font-bold text-indigo-400">
+              {currentProfile?.name.charAt(0)}
             </div>
-            <div>
-              <h2 className="text-lg font-bold text-white leading-tight">{selectedRole} LOGIN</h2>
-              <p className="text-[10px] text-slate-500 font-mono uppercase">SecurePulse Instance V2.1</p>
+            <div className="overflow-hidden">
+              <p className="text-xs font-bold text-white truncate">{currentProfile?.name}</p>
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">{currentUser.userType} • {currentProfile?.place}</p>
             </div>
           </div>
-
-          <form onSubmit={submitLogin} className="space-y-6">
-            <div>
-              <label className="block text-[10px] uppercase font-bold text-slate-600 mb-2 tracking-widest">Corporate Email</label>
-              <input 
-                type="email" 
-                required
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder={selectedRole === 'ADMIN' ? 'admin@securepulse.io' : 'agent-01@securepulse.io'}
-                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] uppercase font-bold text-slate-600 mb-2 tracking-widest">Access Key</label>
-              <input 
-                type="password" 
-                required
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
-              />
-            </div>
-            
-            <div className="p-3 bg-white/5 rounded-xl border border-white/5 text-[10px] text-slate-500 font-mono">
-              <p className="font-bold text-slate-400 mb-1 tracking-tighter">DEFAULT CREDENTIALS:</p>
-              <p>Email: <span className="text-indigo-400">{selectedRole === 'ADMIN' ? 'admin@securepulse.io' : 'agent-01@securepulse.io'}</span></p>
-              <p>Pass: <span className="text-indigo-400">password123</span></p>
-            </div>
-
-            <button 
-              type="submit"
-              className={`w-full py-4 rounded-xl text-white font-bold transition-all shadow-lg ${selectedRole === 'ADMIN' ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-900/20' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/20'}`}
-            >
-              INITIALIZE SESSION
-            </button>
-          </form>
+          <button onClick={() => setCurrentUser(null)} className="w-full py-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 text-[10px] font-bold rounded-xl border border-rose-500/20 transition-all uppercase tracking-widest">
+            Terminate Session
+          </button>
         </div>
-      </div>
+      </aside>
+
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {/* HEADER */}
+        <header className="h-20 border-b border-white/5 flex items-center justify-between px-10 bg-[#0d0d14]/40 backdrop-blur-2xl">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-3 px-4 py-2 bg-black/40 rounded-2xl border border-white/5">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">Wazuh Engine Active</span>
+            </div>
+            <div className="h-8 w-px bg-white/10" />
+            <div className="relative">
+              <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input type="text" placeholder="Search indices..." className="bg-black/20 border border-white/5 rounded-xl pl-10 pr-4 py-2 text-xs focus:outline-none focus:border-indigo-500 transition-all w-64" />
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+             <button className="p-3 bg-white/5 rounded-xl text-slate-400 hover:text-white transition-colors"><Settings size={20} /></button>
+          </div>
+        </header>
+
+        {/* VIEW AREA */}
+        <div className="flex-1 overflow-y-auto p-10 custom-scrollbar bg-[#050508]">
+          
+          {activeTab === 'dashboard' && (
+            <div className="space-y-10 animate-in fade-in">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                 <StatCard label="Total Assets" value={MOCK_ASSETS.length} icon={Server} color="indigo" />
+                 <StatCard label="Active Agents" value={MOCK_AGENTS.length} icon={Cpu} color="emerald" />
+                 <StatCard label="Open Cases" value={MOCK_INCIDENTS.filter(i => i.status !== 'closed').length} icon={ClipboardList} color="rose" />
+                 <StatCard label="Total Alerts" value={MOCK_ALERTS.length} icon={Activity} color="amber" />
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-2 bg-[#0d0d14] border border-white/5 rounded-[2rem] p-8 shadow-2xl relative overflow-hidden">
+                   <h3 className="text-xl font-bold text-white mb-8 flex items-center gap-2">
+                     <BarChart3 size={20} className="text-indigo-400" /> Threat Intensity Pulse
+                   </h3>
+                   <div className="h-72 w-full">
+                     <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={[{t: '08:00', v: 45}, {t: '10:00', v: 120}, {t: '12:00', v: 80}, {t: '14:00', v: 240}, {t: '16:00', v: 190}, {t: '18:00', v: 110}]}>
+                           <defs>
+                              <linearGradient id="colorPulse" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                              </linearGradient>
+                           </defs>
+                           <XAxis dataKey="t" axisLine={false} tickLine={false} tick={{fill: '#475569', fontSize: 10}} />
+                           <YAxis hide />
+                           <Tooltip contentStyle={{backgroundColor: '#0d0d14', border: 'none', borderRadius: '12px'}} />
+                           <Area type="monotone" dataKey="v" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorPulse)" />
+                        </AreaChart>
+                     </ResponsiveContainer>
+                   </div>
+                </div>
+                <div className="bg-[#0d0d14] border border-white/5 rounded-[2rem] p-8 shadow-2xl flex flex-col items-center justify-center">
+                   <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-10 self-start">Integrity Score</h3>
+                   <div className="relative h-48 w-48">
+                      <ResponsiveContainer width="100%" height="100%">
+                         <PieChart>
+                            <Pie data={[{v: 85, c: '#10b981'}, {v: 15, c: '#1e1e2e'}]} innerRadius={70} outerRadius={90} dataKey="v" stroke="none">
+                               <Cell fill="#10b981" /><Cell fill="#1e1e2e" />
+                            </Pie>
+                         </PieChart>
+                      </ResponsiveContainer>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                         <span className="text-4xl font-extrabold text-white">85<span className="text-slate-500 text-lg">%</span></span>
+                         <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest mt-1">Optimal</span>
+                      </div>
+                   </div>
+                   <div className="w-full grid grid-cols-2 gap-4 mt-10">
+                      <div className="p-4 bg-black/40 rounded-2xl border border-white/5 text-center">
+                         <p className="text-[10px] font-bold text-slate-500 uppercase">FIM Status</p>
+                         <p className="text-sm font-bold text-emerald-400 mt-1 uppercase">Stable</p>
+                      </div>
+                      <div className="p-4 bg-black/40 rounded-2xl border border-white/5 text-center">
+                         <p className="text-[10px] font-bold text-slate-500 uppercase">Vulns</p>
+                         <p className="text-sm font-bold text-amber-400 mt-1 uppercase">12 Open</p>
+                      </div>
+                   </div>
+                </div>
+              </div>
+
+              {/* LIVE ALERTS TABLE - WITH ACK LOGIC */}
+              <div className="bg-[#0d0d14] border border-white/5 rounded-[2rem] shadow-2xl overflow-hidden">
+                <div className="px-8 py-6 border-b border-white/5 bg-black/20 flex items-center justify-between">
+                   <h3 className="text-lg font-bold text-white flex items-center gap-3">
+                     <Activity size={20} className="text-indigo-400" /> SecurePulse Alerts Reference
+                   </h3>
+                </div>
+                <div className="overflow-x-auto">
+                   <table className="w-full text-left">
+                      <thead>
+                        <tr className="bg-black/40 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                           <th className="px-8 py-4">Ref ID</th>
+                           <th className="px-8 py-4">Event</th>
+                           <th className="px-8 py-4">Severity</th>
+                           <th className="px-8 py-4">Wazuh Index</th>
+                           <th className="px-8 py-4 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {MOCK_ALERTS.map(alert => (
+                          <tr key={alert.id} className="hover:bg-white/5 transition-colors group">
+                             <td className="px-8 py-5 text-xs font-mono text-indigo-400">#REF-{alert.id}</td>
+                             <td className="px-8 py-5">
+                                <div className="flex flex-col">
+                                   <span className="text-sm font-bold text-white">{alert.title}</span>
+                                   <span className="text-[10px] text-slate-500 mt-0.5">{alert.description}</span>
+                                </div>
+                             </td>
+                             <td className="px-8 py-5">
+                                <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${alert.severity >= 10 ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'}`}>
+                                   LVL {alert.severity}
+                                </span>
+                             </td>
+                             <td className="px-8 py-5 text-[10px] font-mono text-slate-500">{alert.wazuh_index}</td>
+                             <td className="px-8 py-5 text-right">
+                                {alert.status === 'active' ? (
+                                   <button onClick={() => setShowAckModal(alert.id)} className="px-4 py-2 bg-indigo-600 rounded-xl text-[10px] font-bold text-white hover:bg-indigo-500 transition-all uppercase tracking-widest">Acknowledge</button>
+                                ) : (
+                                   <span className="text-[10px] font-bold text-emerald-500 flex items-center gap-2 justify-end">
+                                      <CheckCircle2 size={14}/> ACKNOWLEDGED
+                                   </span>
+                                )}
+                             </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                   </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'inventory' && (
+            <div className="space-y-8 animate-in slide-in-from-right">
+               <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-3xl font-extrabold text-white tracking-tight">SecurePulse Asset Map</h2>
+                    <p className="text-slate-500 mt-1">Mapping monitored systems to Wazuh Agent IDs.</p>
+                  </div>
+               </div>
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                  {MOCK_ASSETS.map(asset => {
+                    const agent = MOCK_AGENTS.find(a => a.asset_id === asset.id);
+                    return (
+                      <div key={asset.id} className="bg-[#0d0d14] border border-white/5 p-8 rounded-[2rem] shadow-2xl relative group hover:border-indigo-500/30 transition-all">
+                         <div className="w-14 h-14 bg-white/5 rounded-2xl flex items-center justify-center text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-all mb-8 shadow-inner">
+                            <Server size={28} />
+                         </div>
+                         <h4 className="text-xl font-bold text-white mb-2 leading-none">{asset.asset_name}</h4>
+                         <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest font-bold">{asset.hostname} • {asset.ip_address}</p>
+                         
+                         <div className="mt-8 space-y-4 pt-8 border-t border-white/5">
+                            <Detail label="Wazuh Agent ID" value={`#${agent?.wazuh_agent_id}`} mono />
+                            <Detail label="Environment" value={asset.environment.toUpperCase()} />
+                            <Detail label="Status" value={agent?.status.toUpperCase()} color={agent?.status === 'active' ? 'text-emerald-400' : 'text-rose-400'} />
+                         </div>
+                         <button className="w-full mt-10 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-[10px] font-bold text-slate-400 uppercase tracking-widest border border-white/5 transition-all">Inspect Endpoint</button>
+                      </div>
+                    );
+                  })}
+               </div>
+            </div>
+          )}
+
+          {activeTab === 'audits' && isAdmin && (
+            <div className="space-y-8 animate-in fade-in">
+               <div className="bg-[#0d0d14] border border-white/5 rounded-[2rem] shadow-2xl overflow-hidden">
+                  <div className="px-8 py-6 border-b border-white/5 bg-black/20">
+                     <h3 className="text-lg font-bold text-white flex items-center gap-3"><History size={20} className="text-indigo-400" /> SecurePulse Login Audits</h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                       <thead>
+                          <tr className="bg-black/40 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                             <th className="px-8 py-4">Audit ID</th>
+                             <th className="px-8 py-4">User Identity</th>
+                             <th className="px-8 py-4">IP Address</th>
+                             <th className="px-8 py-4">Status</th>
+                             <th className="px-8 py-4">Timestamp</th>
+                          </tr>
+                       </thead>
+                       <tbody className="divide-y divide-white/5">
+                          {MOCK_LOGIN_AUDITS.map(audit => (
+                            <tr key={audit.audit_id} className="hover:bg-white/5 transition-colors">
+                               <td className="px-8 py-4 font-mono text-slate-600">#{audit.audit_id}</td>
+                               <td className="px-8 py-4">
+                                  <div className="flex flex-col">
+                                     <span className="text-sm font-bold text-white">{audit.email_input}</span>
+                                     <span className="text-[10px] text-slate-500">{audit.user_agent}</span>
+                                  </div>
+                               </td>
+                               <td className="px-8 py-4 font-mono text-xs text-slate-400">{audit.ip_address}</td>
+                               <td className="px-8 py-4">
+                                  {audit.success ? (
+                                    <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-500 text-[9px] font-bold border border-emerald-500/20">SUCCESS</span>
+                                  ) : (
+                                    <div className="flex flex-col">
+                                      <span className="px-2 py-1 rounded bg-rose-500/10 text-rose-500 text-[9px] font-bold border border-rose-500/20 w-fit">FAILED</span>
+                                      <span className="text-[9px] text-slate-600 mt-1 uppercase font-bold">{audit.fail_reason}</span>
+                                    </div>
+                                  )}
+                               </td>
+                               <td className="px-8 py-4 text-xs text-slate-500 font-mono">{audit.created_at}</td>
+                            </tr>
+                          ))}
+                       </tbody>
+                    </table>
+                  </div>
+               </div>
+            </div>
+          )}
+
+          {activeTab === 'reports' && (
+            <div className="space-y-8 animate-in fade-in">
+               <div className="bg-gradient-to-br from-indigo-900/10 to-transparent border border-indigo-500/10 p-12 rounded-[2.5rem] flex flex-col items-center text-center">
+                  <div className="w-20 h-20 bg-indigo-600/20 rounded-3xl flex items-center justify-center text-indigo-400 mb-6 shadow-2xl">
+                     <FileText size={40} />
+                  </div>
+                  <h2 className="text-3xl font-extrabold text-white">Security Report History</h2>
+                  <p className="text-slate-500 max-w-md mt-2">Historical audit trails generated for Department of Cyber Forensic compliance verification.</p>
+                  <div className="flex gap-4 mt-10">
+                    <button className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-600/20">NEW REPORT</button>
+                    <button className="px-8 py-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold hover:bg-white/10 transition-all">EXPORT DATA</button>
+                  </div>
+               </div>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {[1,2].map(i => (
+                    <div key={i} className="bg-[#0d0d14] border border-white/5 p-6 rounded-[2rem] flex items-center justify-between group cursor-pointer hover:border-indigo-500/20 transition-all">
+                       <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-slate-400 group-hover:text-indigo-400 transition-all">
+                             <FileText size={24} />
+                          </div>
+                          <div>
+                             <h5 className="font-bold text-white text-sm">Security Audit Summary V{i}.0</h5>
+                             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Generated: 2025-12-29</p>
+                          </div>
+                       </div>
+                       <ArrowUpRight size={20} className="text-slate-600 group-hover:text-white transition-colors" />
+                    </div>
+                  ))}
+               </div>
+            </div>
+          )}
+
+        </div>
+
+        {/* LOG TERMINAL FOOTER - LIVE TAIL */}
+        <div className="h-48 bg-[#0d0d14] border-t border-white/10 flex flex-col z-40">
+           <div className="px-8 py-2 bg-black/40 border-b border-white/5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                 <Terminal size={14} className="text-indigo-400" />
+                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Wazuh Live Tail: Ingesting Assets [2/2]</span>
+              </div>
+              <div className="flex items-center gap-2">
+                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                 <span className="text-[9px] font-bold text-emerald-500 uppercase tracking-tighter">Socket Online</span>
+              </div>
+           </div>
+           <div className="flex-1 overflow-y-auto p-6 font-mono text-[11px] leading-relaxed custom-scrollbar bg-black/10">
+              {logs.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-slate-700 italic">Listening for telemetry heartbeat...</div>
+              ) : (
+                logs.map((l, i) => (
+                  <div key={i} className="flex gap-4 mb-1">
+                     <span className="text-slate-600">[{l.ts}]</span>
+                     <span className={`font-bold ${l.severity === 'CRITICAL' ? 'text-rose-500' : 'text-amber-400'}`}>{l.event}</span>
+                     <span className="text-slate-500 truncate">{l.details}</span>
+                  </div>
+                ))
+              )}
+           </div>
+        </div>
+      </main>
+
+      {/* ACK MODAL */}
+      {showAckModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in">
+           <div className="w-full max-w-md bg-[#0d0d14] border border-white/10 p-10 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-1 bg-indigo-500" />
+              <h3 className="text-2xl font-bold text-white mb-2">Acknowledge Alert</h3>
+              <p className="text-sm text-slate-500 mb-8">Provide feedback on Ref ID: <span className="text-indigo-400 font-bold font-mono">#{showAckModal}</span></p>
+              <div className="space-y-6">
+                 <div>
+                    <label className="block text-[10px] uppercase font-bold text-slate-600 mb-2 tracking-widest">Incident Note</label>
+                    <textarea 
+                      value={ackNote}
+                      onChange={e => setAckNote(e.target.value)}
+                      placeholder="e.g. Verified legitimate developer login from Kochi office..."
+                      className="w-full h-32 bg-black/40 border border-white/5 rounded-2xl p-4 text-sm focus:outline-none focus:border-indigo-500 transition-all"
+                    />
+                 </div>
+                 <div className="flex gap-4">
+                    <button onClick={() => setShowAckModal(null)} className="flex-1 py-4 bg-white/5 rounded-2xl text-[10px] font-bold text-slate-400 hover:bg-white/10 transition-all uppercase tracking-widest">Cancel</button>
+                    <button onClick={() => setShowAckModal(null)} className="flex-1 py-4 bg-indigo-600 rounded-2xl text-[10px] font-bold text-white hover:bg-indigo-500 transition-all uppercase tracking-widest shadow-lg shadow-indigo-600/20">Save Acknowledgment</button>
+                 </div>
+              </div>
+           </div>
+        </div>
+      )}
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.1); }
+      `}</style>
     </div>
   );
 };
 
 /**
- * --- MAIN APP ---
+ * --- UI UTILITIES ---
  */
 
-const App = () => {
-  const [currentUser, setCurrentUser] = useState<{ role: UserRole, email: string } | null>(null);
-  const [activeView, setActiveView] = useState<ViewState>('DASHBOARD');
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [graphData, setGraphData] = useState(generateGraphData());
+const NavItem = ({ icon: Icon, label, active, onClick }: any) => (
+  <button onClick={onClick} className={`w-full flex items-center gap-3 px-4 py-4 rounded-2xl text-sm font-semibold transition-all ${active ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/20' : 'text-slate-500 hover:bg-white/5 hover:text-white'}`}>
+    <Icon size={20} /> {label}
+  </button>
+);
 
-  const addLog = (event: string, severity: LogEntry['severity'], details: string) => {
-    const newLog: LogEntry = {
-      ts: new Date().toISOString(),
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      event,
-      email: currentUser?.email || 'SYSTEM',
-      ip: '192.168.1.' + (Math.floor(Math.random() * 254) + 1),
-      severity,
-      details,
-      count: 1
-    };
-    setLogs(prev => [newLog, ...prev.slice(0, 49)]);
-  };
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (Math.random() > 0.8) {
-        addLog('HEARTBEAT_PULSE', 'INFO', 'System check completed by agent daemon.');
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [currentUser]);
-
-  if (!currentUser) {
-    return <LoginScreen onLogin={(role, email) => {
-      setCurrentUser({ role, email });
-      const initialLog: LogEntry = {
-        ts: new Date().toISOString(),
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        event: 'SESSION_INIT',
-        email,
-        ip: '192.168.1.5',
-        severity: 'INFO',
-        details: `User session initialized for role: ${role}`,
-        count: 1
-      };
-      setLogs([initialLog]);
-    }} />;
-  }
-
-  return (
-    <div className="flex h-screen bg-[#050508] text-slate-300 overflow-hidden font-sans">
-      {/* SIDEBAR */}
-      <aside className="w-64 border-r border-white/5 bg-[#0d0d14] flex flex-col p-4">
-        <div className="flex items-center gap-3 mb-8 px-2">
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${currentUser.role === 'ADMIN' ? 'bg-indigo-600 shadow-indigo-500/20' : 'bg-emerald-600 shadow-emerald-500/20'} shadow-lg`}>
-            <Shield size={22} className="text-white" />
-          </div>
-          <div>
-            <h1 className="text-lg font-extrabold text-white tracking-tight">SECURE<span className="text-indigo-400">PULSE</span></h1>
-            <p className="text-[10px] text-slate-500 font-mono tracking-widest leading-none">V2.1 SOC</p>
-          </div>
+const StatCard = ({ label, value, icon: Icon, color }: any) => (
+  <div className="bg-[#0d0d14] border border-white/5 p-8 rounded-[2rem] shadow-2xl relative overflow-hidden group hover:border-white/10 transition-all">
+     <div className="flex items-center justify-between mb-4">
+        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{label}</span>
+        <div className={`p-2 bg-${color}-500/10 rounded-xl text-${color}-400 group-hover:scale-110 transition-transform`}>
+           <Icon size={18} />
         </div>
+     </div>
+     <div className="text-3xl font-extrabold text-white leading-none">{value}</div>
+  </div>
+);
 
-        <nav className="flex-1 space-y-1">
-          <div className="text-[10px] text-slate-600 font-bold uppercase tracking-widest mb-3 px-4">Navigation</div>
-          
-          <button 
-            onClick={() => setActiveView('DASHBOARD')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${activeView === 'DASHBOARD' ? 'bg-indigo-600/10 text-white border border-indigo-500/20' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
-          >
-            <LayoutDashboard size={18} /> Dashboard
-          </button>
-          
-          <button 
-            onClick={() => setActiveView('RESOURCES')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${activeView === 'RESOURCES' ? 'bg-indigo-600/10 text-white border border-indigo-500/20' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
-          >
-            <Server size={18} /> Resources
-          </button>
-          
-          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-white/5 hover:text-white text-sm font-medium transition-all">
-            <Activity size={18} /> Analytics
-          </button>
-          
-          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-white/5 hover:text-white text-sm font-medium transition-all">
-            <Terminal size={18} /> Live Stream
-          </button>
-        </nav>
-
-        <div className="mt-auto">
-          <div className="p-4 bg-black/20 rounded-2xl border border-white/5 mb-4">
-             <div className="flex items-center gap-3 mb-2">
-                <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center overflow-hidden">
-                   <Users size={16} className="text-slate-400" />
-                </div>
-                <div className="overflow-hidden">
-                  <p className="text-[11px] font-bold text-white truncate">{currentUser.email}</p>
-                  <p className="text-[10px] text-slate-500">{currentUser.role}</p>
-                </div>
-             </div>
-             <button 
-              onClick={() => setCurrentUser(null)}
-              className="w-full py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 text-[10px] font-bold rounded-lg border border-rose-500/20 transition-all uppercase tracking-widest"
-             >
-               Terminate Session
-             </button>
-          </div>
-        </div>
-      </aside>
-
-      {/* CONTENT */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        {/* TOP BAR */}
-        <header className="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-[#0d0d14]/40 backdrop-blur-xl">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 px-3 py-1 bg-black rounded-full border border-white/5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="text-[10px] font-mono text-emerald-400">OSSEC_ENGINE: ONLINE</span>
-            </div>
-            <div className="h-4 w-px bg-white/10 hidden md:block"></div>
-            <p className="text-xs text-slate-500 font-medium hidden md:block">{activeView} VIEW</p>
-          </div>
-
-          <div className="flex items-center gap-6">
-            <div className="relative group">
-              <Search size={18} className="text-slate-500 group-hover:text-white transition-colors" />
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center relative">
-               <Activity size={20} className="text-indigo-400" />
-               <span className="absolute -top-1 -right-1 w-3 h-3 bg-indigo-500 rounded-full border-2 border-[#0d0d14]"></span>
-            </div>
-          </div>
-        </header>
-
-        {/* VIEW ROUTING */}
-        <div className="flex-1 overflow-y-auto p-8 bg-[#050508] custom-scrollbar pb-12">
-          
-          {activeView === 'DASHBOARD' && (
-            <div className="flex flex-col gap-8 animate-in fade-in duration-500">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 bg-[#0d0d14] border border-white/5 rounded-3xl p-6 shadow-xl overflow-hidden relative">
-                  <div className="absolute top-0 right-0 p-6 opacity-10 pointer-events-none">
-                     <BarChart3 size={100} className="text-indigo-500" />
-                  </div>
-                  <div className="flex items-center justify-between mb-8">
-                    <div>
-                      <h3 className="text-lg font-bold text-white leading-tight">Threat Surface Intensity</h3>
-                      <p className="text-xs text-slate-500">Event occurrences tracked across the last 24-hour cycle.</p>
-                    </div>
-                  </div>
-                  <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={graphData}>
-                        <defs>
-                          <linearGradient id="colorEvents" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.03)" />
-                        <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: '#475569', fontSize: 10 }} />
-                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#475569', fontSize: 10 }} />
-                        <Tooltip contentStyle={{ backgroundColor: '#0d0d14', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '10px' }} />
-                        <Area type="monotone" dataKey="events" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorEvents)" />
-                        <Line type="monotone" dataKey="critical" stroke="#ef4444" strokeWidth={2} dot={{ r: 4, fill: '#ef4444' }} />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className="bg-[#0d0d14] border border-white/5 rounded-3xl p-6 shadow-xl flex flex-col items-center justify-center">
-                   <h3 className="text-sm font-bold text-white mb-6 self-start flex items-center gap-2">
-                     <AlertTriangle size={16} className="text-indigo-400" /> Severity Distribution
-                   </h3>
-                   <div className="h-48 w-full relative">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie data={PIE_DATA} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                            {PIE_DATA.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                          </Pie>
-                        </PieChart>
-                      </ResponsiveContainer>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                         <span className="text-2xl font-bold text-white">84%</span>
-                         <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Secure</span>
-                      </div>
-                   </div>
-                   <div className="grid grid-cols-3 gap-2 w-full mt-6">
-                      {PIE_DATA.map(item => (
-                        <div key={item.name} className="flex flex-col items-center p-2 rounded-xl bg-black/40 border border-white/5">
-                          <span className="text-[9px] font-bold text-slate-500 uppercase">{item.name}</span>
-                          <span className="text-sm font-bold text-white" style={{ color: item.color }}>{Math.round(item.value / 800 * 100)}%</span>
-                        </div>
-                      ))}
-                   </div>
-                </div>
-              </div>
-
-              <div className="bg-[#0d0d14] border border-white/5 rounded-3xl shadow-xl overflow-hidden flex flex-col">
-                <div className="p-6 border-b border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-black/20">
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2"><Terminal size={18} className="text-indigo-400" /> Advanced Log Monitoring</h3>
-                  <div className="flex gap-2">
-                    <button className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-bold text-slate-300 border border-white/10 transition-all uppercase tracking-widest">Export JSON</button>
-                    {currentUser.role === 'AGENT' && (
-                      <button onClick={() => addLog('MANUAL_AUDIT_SIG', 'WARNING', 'User manually triggered a security audit event.')} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-[10px] font-bold text-white shadow-lg shadow-indigo-500/20 transition-all uppercase tracking-widest flex items-center gap-2">Trigger Log <ArrowUpRight size={14} /></button>
-                    )}
-                  </div>
-                </div>
-                <div className="overflow-x-auto custom-scrollbar">
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="text-left bg-[#050508]/50 border-b border-white/5">
-                        <th className="px-6 py-4 text-[10px] uppercase font-bold text-slate-500 tracking-wider">Timestamp</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-bold text-slate-500 tracking-wider">Event ID</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-bold text-slate-500 tracking-wider">Severity</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-bold text-slate-500 tracking-wider">Source Identity</th>
-                        <th className="px-6 py-4 text-[10px] uppercase font-bold text-slate-500 tracking-wider">Audit Details</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5">
-                      {logs.map((log, idx) => (
-                        <tr key={idx} className="hover:bg-indigo-500/5 transition-colors group cursor-default">
-                          <td className="px-6 py-4">
-                            <div className="flex flex-col">
-                              <span className="text-xs text-white font-mono">{log.time}</span>
-                              <span className="text-[10px] text-slate-600 font-mono">{log.ts.split('T')[0]}</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4"><span className="px-2 py-1 bg-black rounded border border-white/10 text-[10px] font-mono font-bold text-indigo-300">{log.event}</span></td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                               <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: SEVERITY_COLORS[log.severity] }}></div>
-                               <span className="text-[10px] font-bold" style={{ color: SEVERITY_COLORS[log.severity] }}>{log.severity}</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-xs text-slate-200">{log.email}</td>
-                          <td className="px-6 py-4 text-xs text-slate-400 max-w-xs truncate group-hover:whitespace-normal group-hover:overflow-visible">{log.details}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeView === 'RESOURCES' && (
-            <div className="flex flex-col gap-8 animate-in slide-in-from-right duration-500">
-              <div className="flex flex-col md:flex-row gap-6">
-                <div className="flex-1 bg-[#0d0d14] border border-white/5 rounded-3xl p-6 shadow-xl">
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-lg font-bold text-white flex items-center gap-2"><Server size={20} className="text-indigo-400" /> Monitored Assets</h3>
-                    <div className="flex gap-2">
-                       <button className="p-2 bg-white/5 rounded-lg border border-white/10 text-slate-400 hover:text-white transition-all"><Filter size={16}/></button>
-                       <button className="px-3 py-1 bg-indigo-600/10 text-indigo-400 rounded-lg border border-indigo-500/20 text-[10px] font-bold">ADD AGENT</button>
-                    </div>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                      <thead>
-                        <tr className="border-b border-white/5 text-[10px] uppercase font-bold text-slate-500">
-                          <th className="px-4 py-2">ID</th>
-                          <th className="px-4 py-2">Asset Name</th>
-                          <th className="px-4 py-2">IP Address</th>
-                          <th className="px-4 py-2">OS Version</th>
-                          <th className="px-4 py-2">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/5">
-                        {MOCK_ASSETS.map(asset => (
-                          <tr key={asset.id} className="text-xs hover:bg-white/5">
-                            <td className="px-4 py-4 font-mono text-indigo-400">AG-{asset.id}</td>
-                            <td className="px-4 py-4 font-bold text-white">{asset.name}</td>
-                            <td className="px-4 py-4 text-slate-400">{asset.ip}</td>
-                            <td className="px-4 py-4 text-slate-400">{asset.os}</td>
-                            <td className="px-4 py-4">
-                               <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${asset.status === 'ONLINE' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
-                                 {asset.status}
-                               </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <div className="w-full md:w-80 space-y-4">
-                  <div className="bg-[#0d0d14] border border-white/5 rounded-3xl p-6 shadow-xl">
-                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Quick Stats</h4>
-                    <div className="space-y-4">
-                       <div className="flex items-center justify-between">
-                         <span className="text-[11px] text-slate-400">Total Agents</span>
-                         <span className="text-sm font-bold text-white">24</span>
-                       </div>
-                       <div className="flex items-center justify-between">
-                         <span className="text-[11px] text-slate-400">Unsolved Vulns</span>
-                         <span className="text-sm font-bold text-rose-500">12</span>
-                       </div>
-                       <div className="flex items-center justify-between">
-                         <span className="text-[11px] text-slate-400">FIM Violations</span>
-                         <span className="text-sm font-bold text-amber-500">2</span>
-                       </div>
-                    </div>
-                  </div>
-                  <div className="bg-indigo-600 rounded-3xl p-6 shadow-xl shadow-indigo-600/10">
-                     <Zap size={24} className="text-white mb-2" />
-                     <h4 className="text-sm font-bold text-white">System Integrity</h4>
-                     <p className="text-[11px] text-indigo-100 leading-relaxed mb-4">All core systems report valid hardware checksums.</p>
-                     <button className="w-full py-2 bg-white/20 hover:bg-white/30 rounded-xl text-[10px] font-bold text-white transition-all">RUN DEEP SCAN</button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-[#0d0d14] border border-white/5 rounded-3xl p-6 shadow-xl">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-6"><AlertTriangle size={20} className="text-rose-400" /> Vulnerability Reports</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {MOCK_VULNS.map(vuln => (
-                    <div key={vuln.id} className="bg-black/40 border border-white/5 rounded-2xl p-5 hover:border-white/10 transition-all group">
-                      <div className="flex items-center justify-between mb-3">
-                         <span className="px-2 py-0.5 bg-white/5 text-[9px] font-mono text-slate-500 rounded border border-white/10 group-hover:text-indigo-400 transition-colors">{vuln.cve}</span>
-                         <span className={`text-[9px] font-bold ${vuln.severity === 'High' ? 'text-rose-500' : vuln.severity === 'Medium' ? 'text-amber-500' : 'text-blue-400'}`}>{vuln.severity.toUpperCase()}</span>
-                      </div>
-                      <h5 className="text-sm font-bold text-white mb-1">{vuln.pkg} <span className="text-slate-600 font-normal">in</span> {vuln.asset}</h5>
-                      <div className="flex items-center justify-between mt-4">
-                         <span className={`text-[10px] font-bold ${vuln.status === 'OPEN' ? 'text-amber-400' : 'text-emerald-400'}`}>{vuln.status}</span>
-                         <button className="text-[10px] font-bold text-indigo-400 hover:text-white transition-colors">FIX DETECTED</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {currentUser.role === 'ADMIN' && (
-                <div className="bg-[#0d0d14] border border-white/5 rounded-3xl p-6 shadow-xl">
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4"><Code size={20} className="text-indigo-400" /> Global Agent Configuration</h3>
-                  <div className="bg-black rounded-xl p-4 font-mono text-[10px] text-emerald-400/80 overflow-x-auto border border-white/5">
-                    <pre>{`<!-- Remote vulnerability scanner configuration -->
-<vulnerability-detector>
-  <enabled>yes</enabled>
-  <interval>5m</interval>
-  <ignore_time>6h</ignore_time>
-  <run_on_start>yes</run_on_start>
-  <provider name="ubuntu">
-    <enabled>yes</enabled>
-    <os>trusty</os>
-    <os>xenial</os>
-    <os>bionic</os>
-    <os>focal</os>
-    <os>jammy</os>
-    <update_interval>1h</update_interval>
-  </provider>
-</vulnerability-detector>`}</pre>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-        </div>
-
-        {/* PERSISTENT LOG DRAWER FOOTER */}
-        <div className="h-12 bg-[#0d0d14] border-t border-white/5 flex items-center justify-between px-6 shrink-0 z-20">
-           <div className="flex items-center gap-4">
-             <span className="text-[10px] font-bold text-slate-500 flex items-center gap-2"><Clock size={12}/> DATA_RETENTION: 90D</span>
-             <span className="text-[10px] font-bold text-emerald-500 flex items-center gap-2"><Activity size={12}/> INGESTION: 4.2 EPS</span>
-           </div>
-           <div className="flex items-center gap-2">
-              <span className="text-[9px] font-mono text-slate-600">SECUREPULSE_INTERNAL_MGMT</span>
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-           </div>
-        </div>
-      </main>
-    </div>
-  );
-};
+const Detail = ({ label, value, mono, color }: any) => (
+  <div className="flex items-center justify-between">
+    <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">{label}</span>
+    <span className={`text-xs font-bold ${color || 'text-white'} ${mono ? 'font-mono' : ''}`}>{value}</span>
+  </div>
+);
 
 const container = document.getElementById('root');
 if (container) {
