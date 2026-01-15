@@ -27,7 +27,11 @@ import {
   User,
   History,
   MessageSquare,
-  Bug
+  Bug,
+  ExternalLink,
+  Radar,
+  Target,
+  Waves
 } from 'lucide-react';
 import { 
   AreaChart, 
@@ -39,7 +43,15 @@ import {
   ResponsiveContainer, 
   PieChart, 
   Pie, 
-  Cell 
+  Cell,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar as ReRadar,
+  ScatterChart,
+  Scatter,
+  ZAxis
 } from 'recharts';
 
 /**
@@ -131,7 +143,7 @@ interface LoginAudit {
 }
 
 /**
- * --- MOCK DATA (SYCHRONIZED WITH PDF NORMALIZED TABLES) ---
+ * --- MOCK DATA ---
  */
 
 const MOCK_LOGINS: SecurePulseLogin[] = [
@@ -170,6 +182,20 @@ const MOCK_LOGIN_AUDITS: LoginAudit[] = [
 const MOCK_INCIDENTS: SecurePulseIncident[] = [
   { id: 7001, title: 'Brute force attempt on web01', description: 'Multiple failed logins detected on web app', priority: 'high', status: 'in_progress', created_by: 1, assigned_to: 1, created_at: '2025-12-29 10:16:30' },
   { id: 7002, title: 'Upload directory integrity issue', description: 'FIM detected file modification in uploads', priority: 'medium', status: 'open', created_by: 1, assigned_to: null, created_at: '2025-12-29 10:19:00' },
+];
+
+// LOTI Specific Mock Data
+const LOTI_RADAR_DATA = [
+  { subject: 'Automation', A: 85, fullMark: 100 },
+  { subject: 'Visibility', A: 90, fullMark: 100 },
+  { subject: 'Resilience', A: 75, fullMark: 100 },
+  { subject: 'Intelligence', A: 95, fullMark: 100 },
+  { subject: 'Response', A: 80, fullMark: 100 },
+];
+
+const LOTI_SCATTER_DATA = [
+  { x: 10, y: 30, z: 200 }, { x: 30, y: 200, z: 260 }, { x: 45, y: 100, z: 400 },
+  { x: 50, y: 400, z: 280 }, { x: 70, y: 150, z: 500 }, { x: 90, y: 350, z: 340 },
 ];
 
 /**
@@ -252,7 +278,7 @@ const App = () => {
 
   return (
     <div className="flex h-screen bg-[#050508] text-slate-300 overflow-hidden font-sans">
-      {/* SIDEBAR - DFD LEVEL 1 LOGIC */}
+      {/* SIDEBAR */}
       <aside className="w-72 border-r border-white/5 bg-[#0d0d14] flex flex-col p-6">
         <div className="flex items-center gap-3 mb-12">
           <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isAdmin ? 'bg-indigo-600' : 'bg-emerald-600'} shadow-xl`}>
@@ -266,11 +292,28 @@ const App = () => {
 
         <nav className="flex-1 space-y-1">
           <NavItem icon={LayoutDashboard} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
+          <NavItem icon={Target} label="LOTI Analytics" active={activeTab === 'loti'} onClick={() => setActiveTab('loti')} />
           <NavItem icon={Server} label={isAdmin ? "Asset Mapping" : "My Assets"} active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} />
           <NavItem icon={ClipboardList} label="Incidents" active={activeTab === 'incidents'} onClick={() => setActiveTab('incidents')} />
           {isAdmin && <NavItem icon={History} label="Login Audits" active={activeTab === 'audits'} onClick={() => setActiveTab('audits')} />}
           <NavItem icon={FileText} label="Audit Reports" active={activeTab === 'reports'} onClick={() => setActiveTab('reports')} />
           <NavItem icon={Bug} label="Vulnerabilities" active={activeTab === 'vulns'} onClick={() => setActiveTab('vulns')} />
+          
+          {isAdmin && (
+            <div className="pt-6 mt-6 border-t border-white/5">
+              <div className="text-[10px] text-slate-600 font-bold uppercase tracking-widest mb-3 px-4">Legacy Portal</div>
+              <a 
+                href="/admin.php" 
+                target="_blank"
+                className="w-full flex items-center justify-between px-4 py-4 rounded-2xl text-sm font-semibold text-slate-400 hover:bg-indigo-600/10 hover:text-indigo-400 transition-all border border-transparent hover:border-indigo-500/20"
+              >
+                <div className="flex items-center gap-3">
+                  <Database size={20} /> admin.php
+                </div>
+                <ExternalLink size={14} />
+              </a>
+            </div>
+          )}
         </nav>
 
         <div className="mt-auto pt-6 border-t border-white/5">
@@ -300,7 +343,7 @@ const App = () => {
             <div className="h-8 w-px bg-white/10" />
             <div className="relative">
               <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-              <input type="text" placeholder="Search indices..." className="bg-black/20 border border-white/5 rounded-xl pl-10 pr-4 py-2 text-xs focus:outline-none focus:border-indigo-500 transition-all w-64" />
+              <input type="text" placeholder="Search LOTI indices..." className="bg-black/20 border border-white/5 rounded-xl pl-10 pr-4 py-2 text-xs focus:outline-none focus:border-indigo-500 transition-all w-64" />
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -369,55 +412,89 @@ const App = () => {
                    </div>
                 </div>
               </div>
+            </div>
+          )}
 
-              {/* LIVE ALERTS TABLE - WITH ACK LOGIC */}
-              <div className="bg-[#0d0d14] border border-white/5 rounded-[2rem] shadow-2xl overflow-hidden">
-                <div className="px-8 py-6 border-b border-white/5 bg-black/20 flex items-center justify-between">
-                   <h3 className="text-lg font-bold text-white flex items-center gap-3">
-                     <Activity size={20} className="text-indigo-400" /> SecurePulse Alerts Reference
+          {activeTab === 'loti' && (
+            <div className="space-y-8 animate-in zoom-in">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-6 mb-4">
+                <div>
+                  <h2 className="text-4xl font-extrabold text-white tracking-tighter">LOTI <span className="text-indigo-500">Analytics</span></h2>
+                  <p className="text-slate-500 font-medium">Levels of Tactical Intelligence - Unified Threat Awareness Profile</p>
+                </div>
+                <div className="flex items-center gap-3">
+                   <div className="px-6 py-3 bg-indigo-600/10 border border-indigo-500/20 rounded-2xl flex items-center gap-3">
+                      <Waves size={18} className="text-indigo-400 animate-pulse" />
+                      <div>
+                        <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest">Tactical Readiness</p>
+                        <p className="text-lg font-bold text-white">Level 4 <span className="text-xs text-slate-500 font-normal">/ 5</span></p>
+                      </div>
+                   </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Radar Chart for Strategic Awareness */}
+                <div className="bg-[#0d0d14] border border-white/5 rounded-[2.5rem] p-10 shadow-2xl flex flex-col">
+                   <h3 className="text-lg font-bold text-white mb-8 flex items-center gap-3">
+                     <Target size={20} className="text-rose-400" /> Strategic Intelligence Vector
                    </h3>
+                   <div className="h-80 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RadarChart cx="50%" cy="50%" outerRadius="80%" data={LOTI_RADAR_DATA}>
+                          <PolarGrid stroke="#1e293b" />
+                          <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                          <PolarRadiusAxis hide />
+                          <ReRadar name="Profile A" dataKey="A" stroke="#6366f1" fill="#6366f1" fillOpacity={0.4} />
+                        </RadarChart>
+                      </ResponsiveContainer>
+                   </div>
+                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-6 text-center italic">Calculated based on Wazuh rule hits & FIM status across 24h</p>
                 </div>
-                <div className="overflow-x-auto">
-                   <table className="w-full text-left">
-                      <thead>
-                        <tr className="bg-black/40 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                           <th className="px-8 py-4">Ref ID</th>
-                           <th className="px-8 py-4">Event</th>
-                           <th className="px-8 py-4">Severity</th>
-                           <th className="px-8 py-4">Wazuh Index</th>
-                           <th className="px-8 py-4 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/5">
-                        {MOCK_ALERTS.map(alert => (
-                          <tr key={alert.id} className="hover:bg-white/5 transition-colors group">
-                             <td className="px-8 py-5 text-xs font-mono text-indigo-400">#REF-{alert.id}</td>
-                             <td className="px-8 py-5">
-                                <div className="flex flex-col">
-                                   <span className="text-sm font-bold text-white">{alert.title}</span>
-                                   <span className="text-[10px] text-slate-500 mt-0.5">{alert.description}</span>
-                                </div>
-                             </td>
-                             <td className="px-8 py-5">
-                                <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${alert.severity >= 10 ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'}`}>
-                                   LVL {alert.severity}
-                                </span>
-                             </td>
-                             <td className="px-8 py-5 text-[10px] font-mono text-slate-500">{alert.wazuh_index}</td>
-                             <td className="px-8 py-5 text-right">
-                                {alert.status === 'active' ? (
-                                   <button onClick={() => setShowAckModal(alert.id)} className="px-4 py-2 bg-indigo-600 rounded-xl text-[10px] font-bold text-white hover:bg-indigo-500 transition-all uppercase tracking-widest">Acknowledge</button>
-                                ) : (
-                                   <span className="text-[10px] font-bold text-emerald-500 flex items-center gap-2 justify-end">
-                                      <CheckCircle2 size={14}/> ACKNOWLEDGED
-                                   </span>
-                                )}
-                             </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                   </table>
+
+                {/* Anomaly Detection Scatter Plot */}
+                <div className="bg-[#0d0d14] border border-white/5 rounded-[2.5rem] p-10 shadow-2xl flex flex-col">
+                   <h3 className="text-lg font-bold text-white mb-8 flex items-center gap-3">
+                     <Bug size={20} className="text-emerald-400" /> Asset Anomaly Clustering
+                   </h3>
+                   <div className="h-80 w-full">
+                     <ResponsiveContainer width="100%" height="100%">
+                        <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                          <XAxis type="number" dataKey="x" name="Impact" unit="pts" hide />
+                          <YAxis type="number" dataKey="y" name="Frequency" unit="ev" hide />
+                          <ZAxis type="number" dataKey="z" range={[100, 1000]} name="Severity" />
+                          <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                          <Scatter name="Threat Vectors" data={LOTI_SCATTER_DATA} fill="#f43f5e">
+                             {LOTI_SCATTER_DATA.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.z > 300 ? '#f43f5e' : '#fbbf24'} />
+                             ))}
+                          </Scatter>
+                        </ScatterChart>
+                     </ResponsiveContainer>
+                   </div>
+                   <div className="flex justify-center gap-6 mt-6">
+                      <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-rose-500"></div><span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">High Severity</span></div>
+                      <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-amber-500"></div><span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Operational Noise</span></div>
+                   </div>
                 </div>
+              </div>
+
+              {/* Advanced LOTI Metrics */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                 {[
+                   { label: 'Intelligence Fusion', value: '89.4%', sub: '+2.4% last hour', color: 'indigo' },
+                   { label: 'Tactical Lag', value: '42ms', sub: 'Optimized via Engine', color: 'emerald' },
+                   { label: 'Threat Surface', value: 'Moderate', sub: '12 vectors active', color: 'amber' },
+                 ].map((metric, i) => (
+                   <div key={i} className="bg-black/40 border border-white/5 p-8 rounded-[2rem] group hover:border-indigo-500/20 transition-all">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">{metric.label}</p>
+                      <div className="flex items-end gap-3">
+                         <span className={`text-4xl font-extrabold text-white`}>{metric.value}</span>
+                         <span className={`text-[10px] font-bold text-${metric.color}-500 mb-1`}>{metric.sub}</span>
+                      </div>
+                   </div>
+                 ))}
               </div>
             </div>
           )}
@@ -454,6 +531,46 @@ const App = () => {
             </div>
           )}
 
+          {activeTab === 'incidents' && (
+            <div className="space-y-6 animate-in fade-in">
+               <div className="flex items-center justify-between">
+                 <h2 className="text-2xl font-bold text-white tracking-tight">Active Security Incidents</h2>
+                 <button className="px-4 py-2 bg-rose-600 rounded-xl text-xs font-bold text-white shadow-lg shadow-rose-600/20 transition-all tracking-widest">NEW CASE</button>
+               </div>
+               <div className="space-y-4">
+                 {MOCK_INCIDENTS.map(inc => (
+                    <div key={inc.id} className={`bg-[#0d0d14] border border-white/5 rounded-3xl p-6 shadow-xl border-l-4 ${inc.priority === 'high' ? 'border-l-rose-500' : 'border-l-amber-500'} hover:translate-x-1 transition-all`}>
+                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                          <div className="flex-1">
+                             <div className="flex items-center gap-3 mb-2">
+                                <span className="text-[10px] font-mono text-slate-600 font-bold tracking-widest">CASE_ID: #{inc.id}</span>
+                                <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest ${inc.status === 'in_progress' ? 'bg-indigo-500/10 text-indigo-400' : 'bg-amber-500/10 text-amber-500'}`}>
+                                  {inc.status.replace('_', ' ')}
+                                </span>
+                             </div>
+                             <h3 className="text-lg font-bold text-white mb-2">{inc.title}</h3>
+                             <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">{inc.description}</p>
+                          </div>
+                          <div className="flex flex-row md:flex-col items-center md:items-end justify-between gap-4 pt-4 md:pt-0">
+                             <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Assigned</span>
+                                <div className="w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-[8px] font-bold text-white">
+                                  AN
+                                </div>
+                             </div>
+                             <div className="flex items-center gap-2">
+                                <Clock size={12} className="text-slate-500" />
+                                <span className="text-[10px] text-slate-500 font-mono">{inc.created_at}</span>
+                             </div>
+                             <button className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-bold text-white border border-white/5 uppercase tracking-widest">INVESTIGATE</button>
+                          </div>
+                       </div>
+                    </div>
+                 ))}
+               </div>
+            </div>
+          )}
+
           {activeTab === 'audits' && isAdmin && (
             <div className="space-y-8 animate-in fade-in">
                <div className="bg-[#0d0d14] border border-white/5 rounded-[2rem] shadow-2xl overflow-hidden">
@@ -475,22 +592,10 @@ const App = () => {
                           {MOCK_LOGIN_AUDITS.map(audit => (
                             <tr key={audit.audit_id} className="hover:bg-white/5 transition-colors">
                                <td className="px-8 py-4 font-mono text-slate-600">#{audit.audit_id}</td>
-                               <td className="px-8 py-4">
-                                  <div className="flex flex-col">
-                                     <span className="text-sm font-bold text-white">{audit.email_input}</span>
-                                     <span className="text-[10px] text-slate-500">{audit.user_agent}</span>
-                                  </div>
-                               </td>
+                               <td className="px-8 py-4 text-sm font-bold text-white">{audit.email_input}</td>
                                <td className="px-8 py-4 font-mono text-xs text-slate-400">{audit.ip_address}</td>
-                               <td className="px-8 py-4">
-                                  {audit.success ? (
-                                    <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-500 text-[9px] font-bold border border-emerald-500/20">SUCCESS</span>
-                                  ) : (
-                                    <div className="flex flex-col">
-                                      <span className="px-2 py-1 rounded bg-rose-500/10 text-rose-500 text-[9px] font-bold border border-rose-500/20 w-fit">FAILED</span>
-                                      <span className="text-[9px] text-slate-600 mt-1 uppercase font-bold">{audit.fail_reason}</span>
-                                    </div>
-                                  )}
+                               <td className="px-8 py-4 font-bold">
+                                  {audit.success ? <span className="text-emerald-500 text-[10px]">SUCCESS</span> : <span className="text-rose-500 text-[10px]">FAILED</span>}
                                </td>
                                <td className="px-8 py-4 text-xs text-slate-500 font-mono">{audit.created_at}</td>
                             </tr>
@@ -505,61 +610,32 @@ const App = () => {
           {activeTab === 'reports' && (
             <div className="space-y-8 animate-in fade-in">
                <div className="bg-gradient-to-br from-indigo-900/10 to-transparent border border-indigo-500/10 p-12 rounded-[2.5rem] flex flex-col items-center text-center">
-                  <div className="w-20 h-20 bg-indigo-600/20 rounded-3xl flex items-center justify-center text-indigo-400 mb-6 shadow-2xl">
-                     <FileText size={40} />
-                  </div>
+                  <FileText size={48} className="text-indigo-400 mb-6" />
                   <h2 className="text-3xl font-extrabold text-white">Security Report History</h2>
                   <p className="text-slate-500 max-w-md mt-2">Historical audit trails generated for Department of Cyber Forensic compliance verification.</p>
-                  <div className="flex gap-4 mt-10">
-                    <button className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-600/20">NEW REPORT</button>
-                    <button className="px-8 py-4 bg-white/5 border border-white/10 text-white rounded-2xl font-bold hover:bg-white/10 transition-all">EXPORT DATA</button>
-                  </div>
-               </div>
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {[1,2].map(i => (
-                    <div key={i} className="bg-[#0d0d14] border border-white/5 p-6 rounded-[2rem] flex items-center justify-between group cursor-pointer hover:border-indigo-500/20 transition-all">
-                       <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-slate-400 group-hover:text-indigo-400 transition-all">
-                             <FileText size={24} />
-                          </div>
-                          <div>
-                             <h5 className="font-bold text-white text-sm">Security Audit Summary V{i}.0</h5>
-                             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Generated: 2025-12-29</p>
-                          </div>
-                       </div>
-                       <ArrowUpRight size={20} className="text-slate-600 group-hover:text-white transition-colors" />
-                    </div>
-                  ))}
+                  <button className="mt-8 px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl shadow-indigo-600/20">NEW REPORT</button>
                </div>
             </div>
           )}
 
         </div>
 
-        {/* LOG TERMINAL FOOTER - LIVE TAIL */}
+        {/* LOG TERMINAL FOOTER */}
         <div className="h-48 bg-[#0d0d14] border-t border-white/10 flex flex-col z-40">
            <div className="px-8 py-2 bg-black/40 border-b border-white/5 flex items-center justify-between">
               <div className="flex items-center gap-3">
                  <Terminal size={14} className="text-indigo-400" />
                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Wazuh Live Tail: Ingesting Assets [2/2]</span>
               </div>
-              <div className="flex items-center gap-2">
-                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                 <span className="text-[9px] font-bold text-emerald-500 uppercase tracking-tighter">Socket Online</span>
-              </div>
            </div>
            <div className="flex-1 overflow-y-auto p-6 font-mono text-[11px] leading-relaxed custom-scrollbar bg-black/10">
-              {logs.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-slate-700 italic">Listening for telemetry heartbeat...</div>
-              ) : (
-                logs.map((l, i) => (
-                  <div key={i} className="flex gap-4 mb-1">
-                     <span className="text-slate-600">[{l.ts}]</span>
-                     <span className={`font-bold ${l.severity === 'CRITICAL' ? 'text-rose-500' : 'text-amber-400'}`}>{l.event}</span>
-                     <span className="text-slate-500 truncate">{l.details}</span>
-                  </div>
-                ))
-              )}
+              {logs.map((l, i) => (
+                <div key={i} className="flex gap-4 mb-1">
+                   <span className="text-slate-600">[{l.ts}]</span>
+                   <span className={`font-bold ${l.severity === 'CRITICAL' ? 'text-rose-500' : 'text-amber-400'}`}>{l.event}</span>
+                   <span className="text-slate-500 truncate">{l.details}</span>
+                </div>
+              ))}
            </div>
         </div>
       </main>
@@ -570,21 +646,16 @@ const App = () => {
            <div className="w-full max-w-md bg-[#0d0d14] border border-white/10 p-10 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
               <div className="absolute top-0 left-0 w-full h-1 bg-indigo-500" />
               <h3 className="text-2xl font-bold text-white mb-2">Acknowledge Alert</h3>
-              <p className="text-sm text-slate-500 mb-8">Provide feedback on Ref ID: <span className="text-indigo-400 font-bold font-mono">#{showAckModal}</span></p>
-              <div className="space-y-6">
-                 <div>
-                    <label className="block text-[10px] uppercase font-bold text-slate-600 mb-2 tracking-widest">Incident Note</label>
-                    <textarea 
-                      value={ackNote}
-                      onChange={e => setAckNote(e.target.value)}
-                      placeholder="e.g. Verified legitimate developer login from Kochi office..."
-                      className="w-full h-32 bg-black/40 border border-white/5 rounded-2xl p-4 text-sm focus:outline-none focus:border-indigo-500 transition-all"
-                    />
-                 </div>
-                 <div className="flex gap-4">
-                    <button onClick={() => setShowAckModal(null)} className="flex-1 py-4 bg-white/5 rounded-2xl text-[10px] font-bold text-slate-400 hover:bg-white/10 transition-all uppercase tracking-widest">Cancel</button>
-                    <button onClick={() => setShowAckModal(null)} className="flex-1 py-4 bg-indigo-600 rounded-2xl text-[10px] font-bold text-white hover:bg-indigo-500 transition-all uppercase tracking-widest shadow-lg shadow-indigo-600/20">Save Acknowledgment</button>
-                 </div>
+              <p className="text-sm text-slate-500 mb-8 font-mono">#REF-{showAckModal}</p>
+              <textarea 
+                value={ackNote}
+                onChange={e => setAckNote(e.target.value)}
+                placeholder="Incident feedback..."
+                className="w-full h-32 bg-black/40 border border-white/5 rounded-2xl p-4 text-sm focus:outline-none focus:border-indigo-500 transition-all mb-6"
+              />
+              <div className="flex gap-4">
+                 <button onClick={() => setShowAckModal(null)} className="flex-1 py-4 bg-white/5 rounded-2xl text-[10px] font-bold text-slate-400 uppercase tracking-widest">Cancel</button>
+                 <button onClick={() => setShowAckModal(null)} className="flex-1 py-4 bg-indigo-600 rounded-2xl text-[10px] font-bold text-white uppercase tracking-widest">Save</button>
               </div>
            </div>
         </div>
@@ -595,6 +666,11 @@ const App = () => {
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.1); }
+        @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slide-in-from-right { from { transform: translateX(1rem); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes zoom-in { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .animate-in { animation: fade-in 0.4s ease-out; }
+        .zoom-in { animation: zoom-in 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
       `}</style>
     </div>
   );
@@ -614,9 +690,7 @@ const StatCard = ({ label, value, icon: Icon, color }: any) => (
   <div className="bg-[#0d0d14] border border-white/5 p-8 rounded-[2rem] shadow-2xl relative overflow-hidden group hover:border-white/10 transition-all">
      <div className="flex items-center justify-between mb-4">
         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{label}</span>
-        <div className={`p-2 bg-${color}-500/10 rounded-xl text-${color}-400 group-hover:scale-110 transition-transform`}>
-           <Icon size={18} />
-        </div>
+        <Icon size={18} className={`text-${color}-400 group-hover:scale-110 transition-transform`} />
      </div>
      <div className="text-3xl font-extrabold text-white leading-none">{value}</div>
   </div>
