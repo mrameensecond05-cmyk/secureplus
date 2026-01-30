@@ -1,0 +1,199 @@
+version: '3.8'
+
+services:
+  # 1. Frontend (React)
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost/api # Accessed from browser, so localhost/api via nginx
+    depends_on:
+      - api-gateway
+    networks:
+      - securepulse-net
+
+  # 2. API Gateway (Node.js)
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "5000:5000"
+    environment:
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - SOC_SERVICE_URL=http://soc-service:8002
+      - INVENTORY_SERVICE_URL=http://inventory-service:8003
+      - REPORTS_SERVICE_URL=http://reports-service:8004
+      - JWT_SECRET=${JWT_SECRET}
+      - PORT=5000
+    depends_on:
+      - auth-service
+      - soc-service
+    networks:
+      - securepulse-net
+
+  # 3. Auth Service (Python FastAPI)
+  auth-service:
+    build: ./services/auth
+    ports:
+      - "8001:8001"
+    environment:
+      - DB_HOST=mysql
+      - DB_NAME=securepulse
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - REDIS_HOST=redis
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      - mysql
+      - redis
+    networks:
+      - securepulse-net
+
+  # 4. SOC Service (Python FastAPI)
+  soc-service:
+    build: ./services/soc
+    ports:
+      - "8002:8002"
+    environment:
+      - DB_HOST=mysql
+      - DB_NAME=securepulse
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - WAZUH_API_URL=${WAZUH_API_URL}
+      - WAZUH_USER=${WAZUH_USER}
+      - WAZUH_PASSWORD=${WAZUH_PASSWORD}
+    depends_on:
+      - mysql
+      - wazuh-manager
+    networks:
+      - securepulse-net
+
+  # 5. Inventory Service (Python FastAPI)
+  inventory-service:
+    build: ./services/inventory
+    ports:
+      - "8003:8003"
+    environment:
+      - DB_HOST=mysql
+      - DB_NAME=securepulse
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    depends_on:
+      - mysql
+    networks:
+      - securepulse-net
+
+  # 6. Reports Service (Python FastAPI)
+  reports-service:
+    build: ./services/reports
+    ports:
+      - "8004:8004"
+    environment:
+      - DB_HOST=mysql
+      - DB_NAME=securepulse
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    depends_on:
+      - mysql
+    networks:
+      - securepulse-net
+
+  # 7. MySQL + phpMyAdmin
+  mysql:
+    image: mysql:8.0
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=securepulse
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - securepulse-net
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      timeout: 20s
+      retries: 10
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    ports:
+      - "8080:80"
+    environment:
+      - PMA_HOST=mysql
+      - PMA_PORT=3306
+    depends_on:
+      - mysql
+    networks:
+      - securepulse-net
+
+  # 8. Redis
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    networks:
+      - securepulse-net
+
+  # 9. Wazuh (All-in-One)
+  wazuh-manager:
+    image: wazuh/wazuh-manager:4.7.0
+    ports:
+      - "1514:1514" # Agent communication
+      - "1515:1515" # Agent enrollment
+      - "55000:55000" # API
+    environment:
+      - INDEXER_URL=https://wazuh-indexer:9200
+      - WAZUH_API_USER=${WAZUH_USER} # Check if this env var is correct for 4.7.0, usually api_user is configured in config
+      # For simplicity in this rough draft, we assume we configure users later or via volume
+    volumes:
+      - wazuh-data:/var/ossec/data
+    networks:
+      - securepulse-net
+
+  wazuh-indexer:
+    image: wazuh/wazuh-indexer:4.7.0
+    ports:
+      - "9200:9200"
+    environment:
+      - "discovery.type=single-node"
+    networks:
+      - securepulse-net
+
+  wazuh-dashboard:
+    image: wazuh/wazuh-dashboard:4.7.0
+    ports:
+      - "5601:5601"
+    environment:
+      - WAZUH_INDEXER_URL=https://wazuh-indexer:9200
+    depends_on:
+      - wazuh-indexer
+    networks:
+      - securepulse-net
+
+  # 10. Nginx
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      # - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - frontend
+      - api-gateway
+    networks:
+      - securepulse-net
+
+networks:
+  securepulse-net:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  wazuh-data:
