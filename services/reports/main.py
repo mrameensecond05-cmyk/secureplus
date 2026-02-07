@@ -1,25 +1,13 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
 
-app = FastAPI(title="SecurePulse Reports Service")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-@app.get("/")
-def read_root():
-    return {"status": "Reports Service is running", "service": "reports"}
+app = FastAPI(title="Reports Service")
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok"}
+    return {"status": "active", "service": "reports-service"}
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=int(os.getenv("REPORTS_SERVICE_PORT", 8004)), reload=True)
+    port = int(os.getenv("PORT", 8005))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
