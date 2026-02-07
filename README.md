@@ -1,44 +1,52 @@
-Wazuh Components & Installation Guide
-1. Server-Side Components (Already Installed)
-The following components are already included in your Docker deployment (
-docker-compose.yml
-) and run on the central server:
+SecurePulse Windows Deployment Guide
+1. Prerequisites
+  Docker Desktop for Windows installed (version 4.x+).
+  WSL 2 (Windows Subsystem for Linux) backend enabled.
+  Git for Windows (configured to handle line endings correctly).
+3. Critical Configurations
+  A. Memory Allocation (IMPORTANT)
+  The default Docker Desktop memory limit (2GB) is insufficient for Wazuh + Ollama + MySQL.
+  
+  Create/Edit a .wslconfig file in your User Home directory (C:\Users\<YourUser>\.wslconfig).
+  Add the following memory configuration (allocate at least 6GB, preferably 8GB):
+  [wsl2]
+  memory=8GB
+  
+  Restart Docker Desktop. Alternative: Open Docker Desktop Settings -> Resources -> WSL 2 -> Limit memory.
+  B. Wazuh Indexer Requirement (vm.max_map_count)
+  Wazuh Indexer (Elasticsearch/OpenSearch) requires a specific kernel setting.
 
-Component	Container Name	Purpose
-Wazuh Manager	securepulse-wazuh-manager	Receives data from agents, analyzes events, and triggers alerts.
-Wazuh Indexer	securepulse-wazuh-indexer	Stores alerts and event data (search engine based on OpenSearch).
-Wazuh Dashboard	securepulse-wazuh-dashboard	Web interface for visualizing data and managing configuration.
-You do NOT need to install anything else on the server.
+  Open PowerShell as Administrator.
+  
+  Run the following command to set the limit for the current session (WSL 2):
+  wsl -d docker-desktop
+  sysctl -w vm.max_map_count=262144
+  
+  Note: You may need to run this every time you restart Docker/WSL, or add it to /etc/sysctl.conf inside your WSL distribution.
+  
+  C. Line Endings (CRLF vs LF)
+  If you clone the repo on Windows, Git might convert line endings to CRLF. Shell scripts (
+  .sh
+  ) inside containers MUST use LF.
+  
+  Configure Git to preserve LF:
+  git config --global core.autocrlf input
+  If scripts fail to run with "command not found" or weird character errors, use a tool like Dos2Unix or VS Code (bottom right corner -> Change CRLF to LF) to fix them.
+  
+3. Running the System
+   
+  Open PowerShell or Command Prompt.
+  Navigate to the project directory:
+  cd path\to\securepulse
+  Start the containers:
+  docker-compose up --build -d
+  
+5. Accessing the App
 
-2. Client-Side Component (Required on Endpoints)
-To monitor other devices (laptops, servers, VMs), you must install the Wazuh Agent on each of them.
-
-A. Linux Agent Installation (Debian/Ubuntu)
-Run this command on the target machine you want to monitor:
-
-# 1. Add the Wazuh repository
-curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import && chmod 644 /usr/share/keyrings/wazuh.gpg
-echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main" | tee -a /etc/apt/sources.list.d/wazuh.list
-apt-get update
-# 2. Install the agent
-WAZUH_MANAGER="192.168.1.8" apt-get install wazuh-agent
-# (Replace 192.168.1.8 with your SecurePulse server IP)
-# 3. Start the agent
-systemctl daemon-reload
-systemctl enable wazuh-agent
-systemctl start wazuh-agent
-B. Windows Agent Installation
-Download the installer: https://packages.wazuh.com/4.x/windows/wazuh-agent-4.7.0-1.msi
-Run via PowerShell (Admin):
-.\wazuh-agent-4.7.0-1.msi /q WAZUH_MANAGER="192.168.1.8"
-NET START Wazuh
-C. macOS Agent Installation
-Download the package: https://packages.wazuh.com/4.x/macos/wazuh-agent-4.7.0-1.pkg
-Install via terminal:
-sudo installer -pkg wazuh-agent-4.7.0-1.pkg -target /
-sudo /Library/Ossec/bin/wazuh-control start
-3. Verifying Connection
-Once installed, check the connection in SecurePulse Asset Management or via the CLI:
-
-# On the Docker Server
-docker exec -it securepulse-wazuh-manager /var/ossec/bin/agent_control -l
+  Frontend: http://localhost:3000
+  Wazuh Dashboard: http://localhost:5601 (User: admin / Password: check 
+  .env
+   or 
+  docker-compose.yml
+  )
+  API Gateway: http://localhost:5000
